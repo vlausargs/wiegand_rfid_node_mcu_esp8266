@@ -20,6 +20,9 @@ ESP8266WiFiMulti WiFiMulti;
 const char* ssid = "Bumi";
 const char* password = "indonizingtheworld";
 
+String currentId = "";
+bool callAPI = false;
+
 // When any of the pins have changed, update the state of the wiegand library
 void ICACHE_RAM_ATTR pinStateChanged() {
   wiegand.setPin0State(digitalRead(D5));
@@ -47,6 +50,21 @@ void setup() {
   pinStateChanged();
 }
 
+// Every few milliseconds, check for pending messages on the wiegand reader
+// This executes with interruptions disabled, since the Wiegand library is not thread-safe
+void loop() {
+  noInterrupts();
+  wiegand.flush();
+  interrupts();
+  //Sleep a little -- this doesn't have to run very often.
+  if(callAPI == true && currentId != ""){
+    handleAPIPOST();
+    currentId = "";
+    callAPI = false;
+  }
+  delay(2000);
+}
+
 void setupWIFI() {
   // Connecting to WiFi
   Serial.println();
@@ -68,18 +86,6 @@ void setupWIFI() {
   Serial.println(WiFi.localIP());
 }
 
-// Every few milliseconds, check for pending messages on the wiegand reader
-// This executes with interruptions disabled, since the Wiegand library is not thread-safe
-void loop() {
-  noInterrupts();
-  wiegand.flush();
-  interrupts();
-  //Sleep a little -- this doesn't have to run very often.
-  delay(100);
-}
-
-
-
 // Notifies when a reader has been connected or disconnected.
 // Instead of a message, the seconds parameter can be anything you want -- Whatever you specify on `wiegand.onStateChange()`
 void stateChanged(bool plugged, const char* message) {
@@ -90,24 +96,26 @@ void stateChanged(bool plugged, const char* message) {
 // Notifies when a card was read.
 // Instead of a message, the seconds parameter can be anything you want -- Whatever you specify on `wiegand.onReceive()`
 void receivedData(uint8_t* data, uint8_t bits, const char* message) {
+  if(currentId != "" || callAPI != false ) return;
   Serial.print(message);
   Serial.print(bits);
   Serial.print("bits / ");
   //Print value in HEX
   uint8_t bytes = (bits + 7) / 8;
-   String id = "";
+  
   for (int i = 0; i < bytes; i++) {
     // Serial.print(data[i] >> 4, 16);
     // Serial.print(data[i] & 0xF, 16);
        char hexChar[3];
         sprintf(hexChar, "%02X", data[i]); // Convert each byte to a hex string
-        id += hexChar; // Append the hex string to id
+        currentId += hexChar; // Append the hex string to id
   }
   Serial.println();
-  Serial.println(id); // Print the entire id
- 
-  handleAPIPOST();
-  delay(1500);
+  Serial.println(currentId); // Print the entire id
+  Serial.println("Calling Api");
+
+  callAPI = true;
+  
 }
 
 //send to api
@@ -133,9 +141,10 @@ void handleAPIPOST()
       // start connection and send HTTP header
       // https.addHeader("Content-Type", "application/json");
       // String httpRequestData = "{\"api_key\":\"" + String(random(40)) + "\",\"field1\":\"" + String(random(40)) + "\"}";
-
+      String apiKey = String(random(40));
+      String fieldData = String(random(40));
       https.addHeader("Content-Type", "application/x-www-form-urlencoded");
-      String httpRequestData = "api_key=" + String(random(40)) + "&field1=" + String(random(40));
+      String httpRequestData = "api_key=" + apiKey + "&field1=" + fieldData;
       int httpCode = https.POST(httpRequestData);
 
       // httpCode will be negative on error
@@ -147,9 +156,9 @@ void handleAPIPOST()
         // file found at server
         if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_MOVED_PERMANENTLY)
         {
-          String payload = https.getString();
-          // String payload = https.getString(1024);  // optionally pre-reserve string to avoid reallocations in chunk mode
-          Serial.println(payload);
+          // String payload = https.getString();
+          // // String payload = https.getString(1024);  // optionally pre-reserve string to avoid reallocations in chunk mode
+          // Serial.println(payload);
         }
       }
       else
