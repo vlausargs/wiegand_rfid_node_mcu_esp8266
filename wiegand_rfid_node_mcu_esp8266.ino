@@ -226,6 +226,7 @@ void handleAPIGET()
 
 // Notifies when an invalid transmission is detected
 void receivedDataError(Wiegand::DataError error, uint8_t* rawData, uint8_t rawBits, const char* message) {
+  if(currentId != "" || callAPI != false ) return;
   Serial.print(message);
   Serial.print(Wiegand::DataErrorStr(error));
   Serial.print(" - Raw data: ");
